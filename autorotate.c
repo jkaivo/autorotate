@@ -57,6 +57,14 @@ void rotatetouch(enum rotation r)
 	system(cmd);
 }
 
+void rotatewacom(enum rotation r)
+{
+	char *rotations[] = { "none", "half", "ccw", "cw" };
+	char cmd[512];
+	sprintf(cmd, "for dev in $(xsetwacom --list devices | cut -b 38-40); do xsetwacom set \"$dev\" rotate %s; done", rotations[r]);
+	system(cmd);
+}
+
 enum rotation setrotation(enum rotation r)
 {
 	static enum rotation prev = NORMAL;
@@ -65,8 +73,10 @@ enum rotation setrotation(enum rotation r)
 	}
 
 	rotatescreen(r);
+	/* Allow xinput to relocate devices */
 	sleep(1);
 	rotatetouch(r);
+	rotatewacom(r);
 
 	prev = r;
 	return r;
