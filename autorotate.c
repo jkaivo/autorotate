@@ -7,6 +7,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/XInput.h>
 
 #define ACPID_SOCK_PATH "/var/run/acpid.socket"
 
@@ -16,7 +17,12 @@
 /* once on keydown, once on keyup */
 #define ACPI_ROTATELOCK	"ibm/hotkey LEN0068:00 00000080 00006020\n"
 
-#define FIXME_HARDCODED_DEV_NUMBER 4
+/* from /usr/include/xorg/wacom-properties.h */
+#define WACOM_PROP_ROTATION	"Wacom Rotation"
+#define WACOM_DEV_STYLUS	"Wacom ISDv4 EC Pen stylus"
+#define WACOM_DEV_ERASER	"Wacom ISDv4 EC Pen eraser"
+
+#define FIXME_HARDCODED_DEV_NUMBER 5
 #define TOUCH_DEVICE	"SYNAPTICS Synaptics Touch Digitizer V04"
 
 #define GRAVITY_CUTOFF	(7.0)
@@ -29,10 +35,12 @@ int tabletmode = 0;
 int rotatelock = 0;
 enum rotation { NORMAL, INVERSE, LEFT, RIGHT };
 
+static Display *dpy = NULL;
+
 void rotatescreen(enum rotation r)
 {
+	printf("Rotating screen\n");
 	Rotation xr[] = { RR_Rotate_0, RR_Rotate_180, RR_Rotate_90, RR_Rotate_270 };
-	static Display *dpy = NULL;
 	if (dpy == NULL) {
 		dpy = XOpenDisplay(NULL);
 	}
@@ -46,6 +54,7 @@ void rotatescreen(enum rotation r)
 
 void rotatetouch(enum rotation r)
 {
+	printf("Rotating touch input\n");
 	char *matrix[] = {
 		"1 0 0 0 1 0 0 0 1",
 		"-1 0 1 0 -1 1 0 0 1",
@@ -57,12 +66,59 @@ void rotatetouch(enum rotation r)
 	system(cmd);
 }
 
+XDevice *findxdev(const char *device)
+{
+	int ndevs = 0;
+	XDevice *dev = NULL;
+	XDeviceInfo *devs = XListInputDevices(dpy, &ndevs);
+	for (int i = 0; i < ndevs; i++) {
+		if ((!strcmp(devs[i].name, device))) {
+			dev = XOpenDevice(dpy, devs[i].id);
+			break;
+		}
+	}
+	XFreeDeviceList(devs);
+	return dev;
+}
+
+void rotatewacompart(enum rotation r, XDevice *dev)
+{
+	unsigned char rotations[] = { 0, 3, 2, 1 };
+	unsigned char *data;
+	int format;
+	unsigned long nitems, bytes_after;
+	Atom type, prop;
+
+	prop = XInternAtom(dpy, WACOM_PROP_ROTATION, True);
+	if (!prop) {
+		fprintf(stderr, "Property '%s' not available\n",
+			WACOM_PROP_ROTATION);
+		return;
+	}
+
+	XGetDeviceProperty(dpy, dev, prop, 0, 1000, False, AnyPropertyType, &type, &format, &nitems, &bytes_after, &data);
+	if (nitems == 0 || format != 8) {
+		fprintf(stderr, "Wrong or missing value for property '%s'\n",
+			WACOM_PROP_ROTATION);
+		return;
+	}
+
+	*data = rotations[r];
+	XChangeDeviceProperty(dpy, dev, prop, type, format, PropModeReplace,
+		data, nitems);
+	XFlush(dpy);
+
+	XFree(data);
+}
+
 void rotatewacom(enum rotation r)
 {
-	char *rotations[] = { "none", "half", "ccw", "cw" };
-	char cmd[512];
-	sprintf(cmd, "for dev in $(xsetwacom --list devices | cut -b 38-40); do xsetwacom set \"$dev\" rotate %s; done", rotations[r]);
-	system(cmd);
+	printf("Rotating digitizer\n");
+	XDevice *stylus = NULL, *eraser = NULL;
+	stylus = findxdev(WACOM_DEV_STYLUS);
+	rotatewacompart(r, stylus);
+	eraser = findxdev(WACOM_DEV_ERASER);
+	rotatewacompart(r, eraser);
 }
 
 enum rotation setrotation(enum rotation r)
@@ -202,12 +258,15 @@ int main(void)
 		select(nfds, &fds, NULL, NULL, forever ? NULL : &to);
 
 		if (acpi != -1 && FD_ISSET(acpi, &fds)) {
+			printf("Checking ACPI\n");
 			checkacpi(acpi);
+			//printf("Tabletmode: %d; Rotatelock: %d\n", tabletmode, rotatelock);
 		}
 
 		if (tabletmode == 1 && rotatelock == 0) {
 			double x = getraw(X_RAW_FILE);
 			double y = getraw(Y_RAW_FILE);
+			//printf("x: %lg; y: %lg\n", x, y);
 			if (y <= -gravity) {
 				setrotation(NORMAL);
 			} else if (y >= gravity) {
