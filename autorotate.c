@@ -1,11 +1,12 @@
 #define _XOPEN_SOURCE 700
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <X11/extensions/Xrandr.h>
 
 #define ACPID_SOCK_PATH "/var/run/acpid.socket"
 
@@ -27,6 +28,21 @@ int tabletmode = 0;
 int rotatelock = 0;
 enum rotation { NORMAL, INVERSE, LEFT, RIGHT };
 
+void rotatescreen(enum rotation r)
+{
+	Rotation xr[] = { RR_Rotate_0, RR_Rotate_180, RR_Rotate_90, RR_Rotate_270 };
+	static Display *dpy = NULL;
+	if (dpy == NULL) {
+		dpy = XOpenDisplay(NULL);
+	}
+	static Window root = 0;
+	if (root == 0) {
+		root = RootWindow(dpy, DefaultScreen(dpy));
+	}
+	XRRScreenConfiguration *xsc = XRRGetScreenInfo(dpy, root);
+	XRRSetScreenConfig(dpy, xsc, root, 0, xr[r], CurrentTime);
+}
+
 enum rotation setrotation(enum rotation r)
 {
 	static enum rotation prev = NORMAL;
@@ -34,22 +50,7 @@ enum rotation setrotation(enum rotation r)
 		return r;
 	}
 
-	switch (r) {
-	case NORMAL:
-		system("xrandr -o normal");
-		break;
-	case INVERSE:
-		system("xrandr -o inverted");
-		break;
-	case LEFT:
-		system("xrandr -o left");
-		break;
-	case RIGHT:
-		system("xrandr -o right");
-		break;
-	default:
-		break;
-	}
+	rotatescreen(r);
 
 	prev = r;
 	return r;
