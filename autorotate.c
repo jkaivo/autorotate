@@ -23,7 +23,7 @@
 #define WACOM_DEV_ERASER	"Wacom ISDv4 EC Pen eraser"
 
 #define TOUCH_PROP_MATRIX	"Coordinate Transformation Matrix"
-#define TOUCH_DEVICE		"SYNAPTICS Synaptics Touch Digitizer V04"
+#define TOUCH_DEV		"SYNAPTICS Synaptics Touch Digitizer V04"
 
 #define GRAVITY_CUTOFF	(7.0)
 #define DEV_PATH	"/sys/bus/iio/devices/iio:device%d"
@@ -51,19 +51,6 @@ void rotatescreen(enum rotation r)
 	XRRSetScreenConfig(dpy, xsc, root, 0, xr[r], CurrentTime);
 }
 
-void rotatetouch(enum rotation r)
-{
-	char *matrix[] = {
-		"1 0 0 0 1 0 0 0 1",
-		"-1 0 1 0 -1 1 0 0 1",
-		"0 -1 1 1 0 0 0 0 1",
-		"0 1 0 -1 0 1 0 0 1",
-	};
-	char cmd[256];
-	sprintf(cmd, "xinput set-float-prop '%s' '%s' %s", TOUCH_DEVICE, TOUCH_PROP_MATRIX, matrix[r]);
-	system(cmd);
-}
-
 XDevice *findxdev(const char *device)
 {
 	int ndevs = 0;
@@ -77,6 +64,36 @@ XDevice *findxdev(const char *device)
 	}
 	XFreeDeviceList(devs);
 	return dev;
+}
+
+void rotatetouch(enum rotation r)
+{
+	/*
+	char *matrix[] = {
+		"1 0 0 0 1 0 0 0 1",
+		"-1 0 1 0 -1 1 0 0 1",
+		"0 -1 1 1 0 0 0 0 1",
+		"0 1 0 -1 0 1 0 0 1",
+	};
+	char cmd[256];
+	sprintf(cmd, "xinput set-float-prop '%s' '%s' %s", TOUCH_DEVICE, TOUCH_PROP_MATRIX, matrix[r]);
+	system(cmd);
+	*/
+	float matrix[][9] = {
+		{ 1,  0, 0,  0,  1, 0, 0, 0, 1 },
+		{ -1, 0, 1,  0, -1, 1, 0, 0, 1 },
+		{ 0, -1, 1,  1,  0, 0, 0, 0, 1 },
+		{ 0,  1, 0, -1,  0, 1, 0, 0, 1 },
+	};
+	Atom type = XInternAtom(dpy, "FLOAT", False);
+	Atom prop = XInternAtom(dpy, TOUCH_PROP_MATRIX, False);
+	if (!prop) {
+		return;
+	}
+
+	XDevice *dev = findxdev(TOUCH_DEV);
+	XChangeDeviceProperty(dpy, dev, prop, type, 32, PropModeReplace,
+		(void*)matrix[r], 9);
 }
 
 void rotatewacompart(enum rotation r, XDevice *dev)
@@ -267,7 +284,7 @@ int main(void)
 			checkacpi(acpi);
 		}
 
-		if (tabletmode == 1 && rotatelock == 0) {
+		//if (tabletmode == 1 && rotatelock == 0) {
 			double x = getraw(X_RAW_FILE);
 			double y = getraw(Y_RAW_FILE);
 			if (y <= -gravity) {
@@ -279,7 +296,7 @@ int main(void)
 			} else if (x <= -gravity) {
 				setrotation(RIGHT);
 			}
-		}
+		//}
 	}
 
 	return 1;
