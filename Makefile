@@ -1,0 +1,1 @@
+autorotate: autorotate.c
