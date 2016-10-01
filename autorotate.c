@@ -17,6 +17,7 @@
 #define ACPI_ROTATELOCK	"ibm/hotkey LEN0068:00 00000080 00006020\n"
 
 #define FIXME_HARDCODED_DEV_NUMBER 4
+#define TOUCH_DEVICE	"SYNAPTICS Synaptics Touch Digitizer V04"
 
 #define GRAVITY_CUTOFF	(7.0)
 #define DEV_PATH	"/sys/bus/iio/devices/iio:device%d"
@@ -43,6 +44,19 @@ void rotatescreen(enum rotation r)
 	XRRSetScreenConfig(dpy, xsc, root, 0, xr[r], CurrentTime);
 }
 
+void rotatetouch(enum rotation r)
+{
+	char *matrix[] = {
+		"1 0 0 0 1 0 0 0 1",
+		"-1 0 1 0 -1 1 0 0 1",
+		"0 -1 1 1 0 0 0 0 1",
+		"0 1 0 -1 0 1 0 0 1",
+	};
+	char cmd[256];
+	sprintf(cmd, "xinput set-float-prop '%s' 'Coordinate Transformation Matrix' %s", TOUCH_DEVICE, matrix[r]);
+	system(cmd);
+}
+
 enum rotation setrotation(enum rotation r)
 {
 	static enum rotation prev = NORMAL;
@@ -51,6 +65,8 @@ enum rotation setrotation(enum rotation r)
 	}
 
 	rotatescreen(r);
+	sleep(1);
+	rotatetouch(r);
 
 	prev = r;
 	return r;
@@ -89,7 +105,11 @@ void checkacpi(int acpi)
 		nrotate++;
 		if (nrotate == 1) {
 			tabletmode = 1;
+			/* disable touchpad */
+			/* disable trackpoint */
 		} else if (nrotate == 3) {
+			/* enable touchpad */
+			/* enable trackpoint */
 			setrotation(NORMAL);
 			tabletmode = 0;
 			nrotate = 0;
