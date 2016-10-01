@@ -22,8 +22,8 @@
 #define WACOM_DEV_STYLUS	"Wacom ISDv4 EC Pen stylus"
 #define WACOM_DEV_ERASER	"Wacom ISDv4 EC Pen eraser"
 
-#define FIXME_HARDCODED_DEV_NUMBER 5
-#define TOUCH_DEVICE	"SYNAPTICS Synaptics Touch Digitizer V04"
+#define TOUCH_PROP_MATRIX	"Coordinate Transformation Matrix"
+#define TOUCH_DEVICE		"SYNAPTICS Synaptics Touch Digitizer V04"
 
 #define GRAVITY_CUTOFF	(7.0)
 #define DEV_PATH	"/sys/bus/iio/devices/iio:device%d"
@@ -39,7 +39,6 @@ static Display *dpy = NULL;
 
 void rotatescreen(enum rotation r)
 {
-	printf("Rotating screen\n");
 	Rotation xr[] = { RR_Rotate_0, RR_Rotate_180, RR_Rotate_90, RR_Rotate_270 };
 	if (dpy == NULL) {
 		dpy = XOpenDisplay(NULL);
@@ -54,7 +53,6 @@ void rotatescreen(enum rotation r)
 
 void rotatetouch(enum rotation r)
 {
-	printf("Rotating touch input\n");
 	char *matrix[] = {
 		"1 0 0 0 1 0 0 0 1",
 		"-1 0 1 0 -1 1 0 0 1",
@@ -62,7 +60,7 @@ void rotatetouch(enum rotation r)
 		"0 1 0 -1 0 1 0 0 1",
 	};
 	char cmd[256];
-	sprintf(cmd, "xinput set-float-prop '%s' 'Coordinate Transformation Matrix' %s", TOUCH_DEVICE, matrix[r]);
+	sprintf(cmd, "xinput set-float-prop '%s' '%s' %s", TOUCH_DEVICE, TOUCH_PROP_MATRIX, matrix[r]);
 	system(cmd);
 }
 
@@ -91,15 +89,11 @@ void rotatewacompart(enum rotation r, XDevice *dev)
 
 	prop = XInternAtom(dpy, WACOM_PROP_ROTATION, True);
 	if (!prop) {
-		fprintf(stderr, "Property '%s' not available\n",
-			WACOM_PROP_ROTATION);
 		return;
 	}
 
 	XGetDeviceProperty(dpy, dev, prop, 0, 1000, False, AnyPropertyType, &type, &format, &nitems, &bytes_after, &data);
 	if (nitems == 0 || format != 8) {
-		fprintf(stderr, "Wrong or missing value for property '%s'\n",
-			WACOM_PROP_ROTATION);
 		return;
 	}
 
@@ -113,7 +107,6 @@ void rotatewacompart(enum rotation r, XDevice *dev)
 
 void rotatewacom(enum rotation r)
 {
-	printf("Rotating digitizer\n");
 	XDevice *stylus = NULL, *eraser = NULL;
 	stylus = findxdev(WACOM_DEV_STYLUS);
 	rotatewacompart(r, stylus);
@@ -189,17 +182,30 @@ void checkacpi(int acpi)
 	}
 }
 
+FILE *tryopen(const char *dir, const char *file)
+{
+	char *path = malloc(strlen(dir) + strlen(file) + 4);
+	sprintf(path, "%s/%s", dir, file);
+	FILE *dev = fopen(path, "r");
+	free(path);
+	return dev;
+}
+
 FILE *opendevfile(const char *file)
 {
 	static char devdir[sizeof(DEV_PATH) + 5] = { '\0' };
-	char *path = NULL;
+	FILE *dev = NULL;
 	if (devdir[0] == '\0') {
-		sprintf(devdir, DEV_PATH, FIXME_HARDCODED_DEV_NUMBER);
+		for (int i = 0; i < 255; i++) {
+			sprintf(devdir, DEV_PATH, i);
+			dev = tryopen(devdir, file);
+			if (dev) {
+				break;
+			}
+		}
+	} else {
+		dev = tryopen(devdir, file);
 	}
-	path = malloc(strlen(devdir) + strlen(file) + 4);
-	sprintf(path, "%s/%s", devdir, file);
-	FILE *dev = fopen(path, "r");
-	free(path);
 	return dev;
 }
 
@@ -258,15 +264,12 @@ int main(void)
 		select(nfds, &fds, NULL, NULL, forever ? NULL : &to);
 
 		if (acpi != -1 && FD_ISSET(acpi, &fds)) {
-			printf("Checking ACPI\n");
 			checkacpi(acpi);
-			//printf("Tabletmode: %d; Rotatelock: %d\n", tabletmode, rotatelock);
 		}
 
 		if (tabletmode == 1 && rotatelock == 0) {
 			double x = getraw(X_RAW_FILE);
 			double y = getraw(Y_RAW_FILE);
-			//printf("x: %lg; y: %lg\n", x, y);
 			if (y <= -gravity) {
 				setrotation(NORMAL);
 			} else if (y >= gravity) {
