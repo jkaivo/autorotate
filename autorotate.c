@@ -25,7 +25,35 @@
 
 int tabletmode = 0;
 int rotatelock = 0;
-enum { NORMAL, LEFT, INVERTED, RIGHT } rotation = NORMAL;
+enum rotation { NORMAL, INVERSE, LEFT, RIGHT };
+
+enum rotation setrotation(enum rotation r)
+{
+	static enum rotation prev = NORMAL;
+	if (r == prev) {
+		return r;
+	}
+
+	switch (r) {
+	case NORMAL:
+		system("xrandr -o normal");
+		break;
+	case INVERSE:
+		system("xrandr -o inverted");
+		break;
+	case LEFT:
+		system("xrandr -o left");
+		break;
+	case RIGHT:
+		system("xrandr -o right");
+		break;
+	default:
+		break;
+	}
+
+	prev = r;
+	return r;
+}
 
 int openacpi(const char *path)
 {
@@ -59,10 +87,9 @@ void checkacpi(int acpi)
 	if (!strcmp(buf, ACPI_ROTATE)) {
 		nrotate++;
 		if (nrotate == 1) {
-			printf("Entering tablet mode\n");
 			tabletmode = 1;
 		} else if (nrotate == 3) {
-			printf("Leaving tablet mode\n");
+			setrotation(NORMAL);
 			tabletmode = 0;
 			nrotate = 0;
 		}
@@ -71,7 +98,6 @@ void checkacpi(int acpi)
 		if (nlock == 2) {
 			nlock = 0;
 			rotatelock = ! rotatelock;
-			printf("Set rotate lock to %d\n", rotatelock);
 		}
 	}
 }
@@ -121,17 +147,15 @@ int main(void)
 {
 	double gravity = getgravity(GRAVITY_CUTOFF);
 
-	printf("Grativational cutoff is %lf\n", gravity);
 	int acpi = openacpi(NULL);
 	if (acpi == -1) {
 		tabletmode = 1;
 		rotatelock = 0;
-		rotation = NORMAL;
 	}
 
 	for (;;) {
-		int nfds = 0;
-		fd_set fds = acpi + 1;
+		int nfds = acpi + 1;
+		fd_set fds;
 		FD_ZERO(&fds);
 		struct timeval to = {0};
 		to.tv_usec = 5000;
@@ -153,9 +177,15 @@ int main(void)
 		if (tabletmode == 1 && rotatelock == 0) {
 			double x = getraw(X_RAW_FILE);
 			double y = getraw(Y_RAW_FILE);
-			printf("X: %lg; Y: %lg\n", x, y);
-		} else {
-			printf("Not rotating because tabletmode is %d and rotatelock is %d\n", tabletmode, rotatelock);
+			if (y <= -gravity) {
+				setrotation(NORMAL);
+			} else if (y >= gravity) {
+				setrotation(INVERSE);
+			} else if (x >= gravity) {
+				setrotation(LEFT);
+			} else if (x <= -gravity) {
+				setrotation(RIGHT);
+			}
 		}
 	}
 
