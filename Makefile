@@ -1,2 +1,2 @@
-LDLIBS=-lXrandr -lX11
+LDLIBS=-lXrandr -lX11 -lXi
 autorotate: autorotate.c
